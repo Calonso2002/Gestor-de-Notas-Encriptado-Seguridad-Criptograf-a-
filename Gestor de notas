@@ -1,0 +1,77 @@
+import os
+import base64
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+class GestorSeguridad:
+    def __init__(self, password):
+        # Generar una clave segura a partir de la contraseña del usuario
+        sal = b'sal_estatica_16b'  # En producción se usaría una sal aleatoria
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=16,
+            salt=sal,
+            iterations=100000
+        )
+        self.clave = kdf.derive(password.encode())
+        self.iv = b'vector_init_16b_' # Vector de inicialización fijo para el ejemplo
+
+    def encriptar(self, texto_plano):
+        cipher = Cipher(algorithms.AES(self.clave), modes.CBC(self.iv))
+        encryptor = cipher.encryptor()
+        
+        # Relleno (Padding) manual para bloques de 16 bytes
+        pad_len = 16 - (len(texto_plano) % 16)
+        texto_pad = texto_plano + (chr(pad_len) * pad_len)
+        
+        contenido_cifrado = encryptor.update(texto_pad.encode()) + encryptor.finalize()
+        return base64.b64encode(contenido_cifrado).decode('utf-8')
+
+    def desencriptar(self, texto_cifrado):
+        try:
+            cipher = Cipher(algorithms.AES(self.clave), modes.CBC(self.iv))
+            decryptor = cipher.decryptor()
+            
+            datos_bytes = base64.b64decode(texto_cifrado.encode())
+            texto_pad = decryptor.update(datos_bytes) + decryptor.finalize()
+            
+            # Quitar el relleno
+            texto_cadena = texto_pad.decode('utf-8')
+            pad_len = ord(texto_cadena[-1])
+            return texto_cadena[:-pad_len]
+        except Exception:
+            return "❌ Error: Contraseña incorrecta o datos corruptos."
+
+# --- Flujo del Programa ---
+if __name__ == "__main__":
+    print("🔐 BIENVENIDO AL GESTOR DE NOTAS ENCRIPTADO 🔐")
+    clave_usuario = input("Establece la contraseña maestra para tus notas: ")
+    crypto = GestorSeguridad(clave_usuario)
+    
+    archivo_notas = "diario_secreto.enc"
+
+    while True:
+        print("\n1. Escribir/Sobrescribir nota secreta\n2. Leer nota secreta\n3. Salir")
+        opcion = input("Selecciona: ")
+
+        if opcion == "1":
+            nota = input("Escribe tu nota confidencial:\n> ")
+            texto_encriptado = crypto.encriptar(nota)
+            with open(archivo_notas, "w") as f:
+                f.write(texto_encriptado)
+            print("🔒 Nota cifrada y guardada con éxito en 'diario_secreto.enc'.")
+            
+        elif opcion == "2":
+            if not os.path.exists(archivo_notas):
+                print("⚠️ No hay ninguna nota guardada aún.")
+                continue
+            
+            with open(archivo_notas, "r") as f:
+                contenido_archivo = f.read()
+            
+            print("\n🔓 Contenido desencriptado:")
+            print(crypto.desencriptar(contenido_archivo))
+            
+        elif opcion == "3":
+            break
